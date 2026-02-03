@@ -1,71 +1,100 @@
 #include <iostream>
 #include <vector>
-#include <unistd.h>
-#include <memory>
-#include "rclcpp/rclcpp.hpp"
-#include "../include/zmcaux.h" // 引用头文件
+#include <chrono>
+#include <thread>
+#include "../include/zmcaux.h"
 
-class MotionControlNode : public rclcpp::Node {
-public:
-    MotionControlNode() : Node("motion_control_node") {
-        RCLCPP_INFO(this->get_logger(), "Initializing motion control node...");
-        
-        // 仿真器通常在Windows上，Linux环境下请修改为实际控制卡的IP
-        char ip_addr[] = "192.168.0.11"; 
-
-        // 1. 连接控制器
-        int ret = ZAux_OpenEth(ip_addr, &handle_);
-        if (ret != 0) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to connect to controller, error code: %d", ret);
-            return;
-        }
-        RCLCPP_INFO(this->get_logger(), "Successfully connected to controller: %s", ip_addr);
-
-        // 2. 获取控制器信息 (ZAux_GetControllerInfo)
-        char soft_type[32], soft_version[32], controller_id[32];
-        ret = ZAux_GetControllerInfo(handle_, soft_type, soft_version, controller_id);
-        if (ret == 0) {
-            RCLCPP_INFO(this->get_logger(), "Controller Info:");
-            RCLCPP_INFO(this->get_logger(), "  Model: %s", soft_type);
-            RCLCPP_INFO(this->get_logger(), "  Version: %s", soft_version);
-            RCLCPP_INFO(this->get_logger(), "  ID: %s", controller_id);
-        }
-
-        // 3. 获取最大规格数 (ZAux_GetSysSpecification)
-        uint16 max_virt_axes;
-        uint8 max_motors;
-        uint8 max_io[4]; // 分别存 IN, OUT, AD, DA 的最大值
-        ret = ZAux_GetSysSpecification(handle_, &max_virt_axes, &max_motors, max_io);
-        if (ret == 0) {
-            RCLCPP_INFO(this->get_logger(), "System Specification:");
-            RCLCPP_INFO(this->get_logger(), "  Max Virtual Axes: %d", max_virt_axes);
-            RCLCPP_INFO(this->get_logger(), "  Max Motors: %d", max_motors);
-            RCLCPP_INFO(this->get_logger(), "  Digital Inputs (IN): %d", (int)max_io[0]);
-            RCLCPP_INFO(this->get_logger(), "  Digital Outputs (OUT): %d", (int)max_io[1]);
-        }
-        
-        // 4. 关闭连接（在实际应用中，可能需要在节点销毁时关闭连接）
-        ZAux_Close(handle_);
-        handle_ = NULL;
-        RCLCPP_INFO(this->get_logger(), "Connection closed safely");
-    }
+int main() {
+    ZMC_HANDLE handle = NULL;
+    // 实体卡 IP 请根据实际修改，仿真器通常用 "127.0.0.1"
+    char ip[] = "192.168.0.11"; 
     
-    ~MotionControlNode() {
-        if (handle_ != NULL) {
-            ZAux_Close(handle_);
-            handle_ = NULL;
-            RCLCPP_INFO(this->get_logger(), "Connection closed safely in destructor");
+    // 1. 建立通信连接
+    if (ZAux_OpenEth(ip, &handle) != 0) {
+        std::cerr << "连接控制器失败，请检查 IP 或网络连接。" << std::endl;
+        return -1;
+    }
+    std::cout << "连接成功！" << std::endl;
+
+    // 2. 初始化总线
+    ZAux_BusCmd_InitBus(handle);
+    
+    // 增加等待时间或更细致的判断
+    int init_status = 0;
+    for (int i = 0; i < 50; i++) { // 增加循环次数到 50 次 (约 5秒)
+        ZAux_BusCmd_GetInitStatus(handle, &init_status);
+        if (init_status == 1) {
+            std::cout << "总线初始化成功完成！" << std::endl;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
+    }
+
+    // 如果初始化没成功，最好读取具体的节点状态，看看卡在哪里
+    for (int axis = 0; axis < 3; axis++) {
+        uint32 node_st = 0;  // 建议使用 int，匹配 SDK 定义
+        // 注意：这里的 i 指的是总线上的第几个从站
+        ZAux_BusCmd_GetNodeStatus(handle, 0, axis, &node_st);
+
+        // 打印每个节点的具体状态，方便调试
+        std::cout << "节点 " << axis << " 状态码: 0x" << std::hex << node_st << std::dec;
+
+        if (node_st == 0x08) {
+            std::cout << " [运行正常 (Operational)]" << std::endl;
+        } else {
+            std::cout << " [异常!]" << std::endl;
+            // 常见的状态解读：
+            // 0x01: Init (初始化)
+            // 0x02: Pre-Op (预操作)
+            // 0x04: Safe-Op (安全操作)
+            // 如果卡在 0x04，通常是驱动器参数配置有误或同步周期不匹配
         }
     }
-    
-private:
-    ZMC_HANDLE handle_ = NULL;
-};
 
-int main(int argc, char * argv[]) {
-    rclcpp::init(argc, argv);
-    auto node = std::make_shared<MotionControlNode>();
-    rclcpp::spin_some(node); // 处理所有待处理的事件，然后返回
-    rclcpp::shutdown();
+    // 3. 获取总线节点数量
+    int node_num = 0;
+    ZAux_BusCmd_GetNodeNum(handle, 0, &node_num);
+    std::cout << "总线上已发现节点数: " << node_num << std::endl;
+
+    // 4. 定义我们要操作的轴 (0, 1, 2 号轴)
+    std::vector<int> axes = {0, 1, 2};
+
+    std::cout << "正在清理报警并使能轴..." << std::endl;
+    for (int axis : axes) {
+        // A. 清除驱动器可能存在的报警
+        ZAux_BusCmd_DriveClear(handle, axis, 0);
+        
+        // B. 设置基本参数（根据你的丝杠/减速比设定 units）
+        ZAux_Direct_SetUnits(handle, axis, 1000.0);
+        ZAux_Direct_SetSpeed(handle, axis, 100.0);
+        ZAux_Direct_SetAccel(handle, axis, 1000.0);
+
+        // C. 开启使能
+        int ret = ZAux_Direct_SetAxisEnable(handle, axis, 1);
+        if (ret == 0) {
+            std::cout << "轴 " << axis << " 使能成功。" << std::endl;
+        }
+    }
+
+    // 5. 模拟程序运行阶段
+    std::cout << "\n系统已进入使能状态，保持 5 秒后自动关闭..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    // 6. 安全退出流程 (务必手动关闭使能)
+    std::cout << "\n正在执行安全停机流程..." << std::endl;
+    for (int axis : axes) {
+        // 停止当前轴的所有运动
+        ZAux_Direct_Single_Cancel(handle, axis, 2);
+        // 关闭使能（电机掉电，手可推）
+        ZAux_Direct_SetAxisEnable(handle, axis, 0);
+        std::cout << "轴 " << axis << " 已去使能。" << std::endl;
+    }
+
+    // 7. 关闭连接
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    ZAux_Close(handle);
+    handle = NULL; // 手动置空指针，防止误用
+    std::cout << "通信关闭，程序退出。" << std::endl;
+
     return 0;
 }
