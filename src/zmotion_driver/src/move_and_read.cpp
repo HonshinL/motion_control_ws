@@ -19,8 +19,8 @@ int main() {
     ZAux_Direct_SetDecel(handle, axis, 20.0);   // 缓慢减速
     
     // 设置软限位防止意外
-    ZAux_Direct_SetForwardLimit(handle, axis, 100.0);
-    ZAux_Direct_SetReverseLimit(handle, axis, -100.0);
+    ZAux_Direct_SetFsLimit(handle, axis, 100.0); // 使用FsLimit代替ForwardLimit
+    ZAux_Direct_SetRsLimit(handle, axis, -100.0); // 使用RsLimit代替ReverseLimit
 
     // 使能轴
     ZAux_Direct_SetAxisEnable(handle, axis, 1);
@@ -62,5 +62,6 @@ int main() {
     std::cout << "最终稳态误差: " << (dpos - mpos) * 1000 << " um" << std::endl;
 
     ZAux_Close(handle);
+    handle = NULL;
     return 0;
 }

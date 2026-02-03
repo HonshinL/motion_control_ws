@@ -18,6 +18,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 
 include_directories(include)
 
@@ -37,11 +38,12 @@ add_executable(zmotion_test
     src/zmcaux.cpp
 )
 
-ament_target_dependencies(zmotion_test rclcpp)
+ament_target_dependencies(zmotion_test rclcpp std_msgs)
 
 target_link_libraries(zmotion_test
-    ${ZMOTION_LIBRARY}
+    # ${ZMOTION_LIBRARY}
     pthread
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/libzmotion.so
 )
 
 # 设置rpath，确保运行时能够找到库文件
