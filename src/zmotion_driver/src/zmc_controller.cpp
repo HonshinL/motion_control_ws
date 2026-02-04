@@ -183,6 +183,17 @@ void ZmcController::initROS() {
     // 创建DXF转换状态发布者（异步任务状态通知）
     convert_status_pub_ = this->create_publisher<std_msgs::msg::String>("zmc_pub/convert_dxf_to_xml/status", 10);
 
+    // 创建移动到目标位置Action服务器
+    move_to_position_action_server_ = rclcpp_action::create_server<motion_msgs::action::MoveToPosition>(
+        this,
+        "zmc/move_to_position",
+        std::bind(&ZmcController::handleMoveToPositionGoal, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ZmcController::handleMoveToPositionCancel, this, std::placeholders::_1),
+        std::bind(&ZmcController::handleMoveToPositionAccepted, this, std::placeholders::_1));
+    
+    // 初始化Action状态
+    action_running_ = false;
+
     // 不在构造/初始化阶段进行阻塞性连接，使用显式的 start() 方法进行连接和启动发布
 }
 
@@ -407,6 +418,223 @@ void ZmcController::handleConvertDxfToXml(const std::shared_ptr<motion_msgs::srv
     RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
     RCLCPP_INFO(this->get_logger(), "输出XML文件路径: %s", xml_file_path.c_str());
     return;
+}
+
+// Action相关方法实现
+
+// 处理Action目标请求
+rclcpp_action::GoalResponse ZmcController::handleMoveToPositionGoal(
+    const rclcpp_action::GoalUUID & uuid,
+    std::shared_ptr<const motion_msgs::action::MoveToPosition::Goal> goal) {
+    
+    RCLCPP_INFO(this->get_logger(), "收到移动到目标位置Action请求");
+    
+    // 检查控制器是否连接
+    if (!is_connected_) {
+        RCLCPP_ERROR(this->get_logger(), "控制器未连接，拒绝Action请求");
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    
+    // 检查是否有正在执行的Action
+    if (action_running_) {
+        RCLCPP_WARN(this->get_logger(), "已有Action正在执行，拒绝新请求");
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    
+    // 检查目标参数有效性
+    if (goal->target_axes.empty() || goal->target_positions.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "目标轴号或位置列表为空，拒绝Action请求");
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    
+    if (goal->target_axes.size() != goal->target_positions.size()) {
+        RCLCPP_ERROR(this->get_logger(), "目标轴号数量(%zu)与位置数量(%zu)不匹配", 
+                     goal->target_axes.size(), goal->target_positions.size());
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    
+    if (goal->speed <= 0 || goal->acceleration <= 0 || goal->deceleration <= 0) {
+        RCLCPP_ERROR(this->get_logger(), "速度或加速度参数无效，拒绝Action请求");
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    
+    RCLCPP_INFO(this->get_logger(), "接受移动到目标位置Action请求");
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+}
+
+// 处理Action取消请求
+rclcpp_action::CancelResponse ZmcController::handleMoveToPositionCancel(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle) {
+    
+    RCLCPP_INFO(this->get_logger(), "收到Action取消请求");
+    
+    if (action_running_ && current_goal_handle_ == goal_handle) {
+        // 停止所有轴的运动
+        for (int axis : axes_) {
+            ZAux_Direct_Single_Cancel(handle_, axis, 0);
+        }
+        
+        action_running_ = false;
+        RCLCPP_INFO(this->get_logger(), "Action已取消");
+        return rclcpp_action::CancelResponse::ACCEPT;
+    }
+    
+    RCLCPP_WARN(this->get_logger(), "没有正在执行的Action可以取消");
+    return rclcpp_action::CancelResponse::REJECT;
+}
+
+// 接受并执行Action
+void ZmcController::handleMoveToPositionAccepted(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle) {
+    
+    action_running_ = true;
+    current_goal_handle_ = goal_handle;
+    
+    auto goal = goal_handle->get_goal();
+    auto result = std::make_shared<motion_msgs::action::MoveToPosition::Result>();
+    auto feedback = std::make_shared<motion_msgs::action::MoveToPosition::Feedback>();
+    
+    RCLCPP_INFO(this->get_logger(), "开始执行移动到目标位置Action");
+    
+    try {
+        // 设置运动参数
+        for (size_t i = 0; i < goal->target_axes.size(); ++i) {
+            int axis = goal->target_axes[i];
+            
+            // 设置轴速度
+            if (!checkError(ZAux_Direct_SetSpeed(handle_, axis, goal->speed))) {
+                throw std::runtime_error("设置轴 " + std::to_string(axis) + " 速度失败");
+            }
+            
+            // 设置加速度
+            if (!checkError(ZAux_Direct_SetAccel(handle_, axis, goal->acceleration))) {
+                throw std::runtime_error("设置轴 " + std::to_string(axis) + " 加速度失败");
+            }
+            
+            // 设置减速度
+            if (!checkError(ZAux_Direct_SetDecel(handle_, axis, goal->deceleration))) {
+                throw std::runtime_error("设置轴 " + std::to_string(axis) + " 减速度失败");
+            }
+        }
+        
+        // 启动运动
+        for (size_t i = 0; i < goal->target_axes.size(); ++i) {
+            int axis = goal->target_axes[i];
+            float target_position = goal->target_positions[i];
+            
+            if (!checkError(ZAux_Direct_Single_MoveAbs(handle_, axis, target_position))) {
+                throw std::runtime_error("设置轴 " + std::to_string(axis) + " 目标位置失败");
+            }
+            
+            RCLCPP_INFO(this->get_logger(), "轴 %d 开始移动到位置 %.3f", axis, target_position);
+        }
+        
+        // 监控运动过程
+        bool all_axes_completed = false;
+        auto start_time = this->now();
+        
+        while (action_running_ && !all_axes_completed) {
+            // 检查Action是否被取消
+            if (goal_handle->is_canceling()) {
+                result->success = false;
+                result->message = "Action被用户取消";
+                goal_handle->canceled(result);
+                action_running_ = false;
+                RCLCPP_INFO(this->get_logger(), "Action执行被取消");
+                return;
+            }
+            
+            // 更新反馈信息
+            feedback->current_positions.clear();
+            feedback->current_velocities.clear();
+            
+            int completed_axes = 0;
+            all_axes_completed = true;
+            
+            for (size_t i = 0; i < goal->target_axes.size(); ++i) {
+                int axis = goal->target_axes[i];
+                float target_position = goal->target_positions[i];
+                
+                float current_position = 0.0;
+                float current_velocity = 0.0;
+                
+                // 读取当前位置和速度
+                if (getMpos(axis, current_position) && getCurSpeed(axis, current_velocity)) {
+                    feedback->current_positions.push_back(current_position);
+                    feedback->current_velocities.push_back(current_velocity);
+                    
+                    // 检查是否到达目标位置
+                    if (isAxisAtPosition(axis, target_position)) {
+                        completed_axes++;
+                    } else {
+                        all_axes_completed = false;
+                    }
+                } else {
+                    all_axes_completed = false;
+                    RCLCPP_WARN(this->get_logger(), "无法读取轴 %d 的当前位置和速度", axis);
+                }
+            }
+            
+            // 计算进度
+            feedback->progress = static_cast<float>(completed_axes) / goal->target_axes.size();
+            feedback->current_status = "移动中，已完成 " + std::to_string(completed_axes) + "/" + 
+                                      std::to_string(goal->target_axes.size()) + " 个轴";
+            
+            // 发布反馈
+            goal_handle->publish_feedback(feedback);
+            
+            // 短暂休眠，避免过度占用CPU
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        
+        if (action_running_) {
+            // 所有轴都到达目标位置
+            result->end_time = this->now();
+            result->success = true;
+            result->message = "所有轴成功到达目标位置";
+            result->final_positions = feedback->current_positions;
+            
+            goal_handle->succeed(result);
+            RCLCPP_INFO(this->get_logger(), "Action执行成功完成");
+        }
+        
+    } catch (const std::exception& e) {
+        result->end_time = this->now();
+        result->success = false;
+        result->message = "Action执行失败: " + std::string(e.what());
+        
+        goal_handle->abort(result);
+        RCLCPP_ERROR(this->get_logger(), "Action执行失败: %s", e.what());
+    }
+    
+    action_running_ = false;
+}
+
+// 执行单轴移动
+bool ZmcController::moveSingleAxis(int axis, float target_position, float speed, float acceleration, float deceleration) {
+    if (!is_connected_) return false;
+    
+    // 设置运动参数
+    if (!checkError(ZAux_Direct_SetSpeed(handle_, axis, speed)) ||
+        !checkError(ZAux_Direct_SetAccel(handle_, axis, acceleration)) ||
+        !checkError(ZAux_Direct_SetDecel(handle_, axis, deceleration)) ||
+        !checkError(ZAux_Direct_Single_MoveAbs(handle_, axis, target_position))) {
+        return false;
+    }
+    
+    return true;
+}
+
+// 检查轴是否到达目标位置
+bool ZmcController::isAxisAtPosition(int axis, float target_position, float tolerance) {
+    if (!is_connected_) return false;
+    
+    float current_position = 0.0;
+    if (!getMpos(axis, current_position)) {
+        return false;
+    }
+    
+    return std::abs(current_position - target_position) <= tolerance;
 }
 
 // 私有方法

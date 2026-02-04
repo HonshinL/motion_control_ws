@@ -11,6 +11,8 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "motion_msgs/msg/motion_status.hpp"
 #include "motion_msgs/srv/convert_dxf_to_xml.hpp"
+#include "motion_msgs/action/move_to_position.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 #include "zmotion_driver/zmcaux.h"
 
 using namespace std::chrono_literals;
@@ -78,6 +80,49 @@ public:
      */
     void handleConvertDxfToXml(const std::shared_ptr<motion_msgs::srv::ConvertDxfToXml::Request> request,
                               std::shared_ptr<motion_msgs::srv::ConvertDxfToXml::Response> response);
+
+    // 移动到目标位置Action
+    /**
+     * @brief 处理移动到目标位置的Action请求
+     * @param goal_handle Action目标句柄
+     */
+    rclcpp_action::GoalResponse handleMoveToPositionGoal(
+        const rclcpp_action::GoalUUID & uuid,
+        std::shared_ptr<const motion_msgs::action::MoveToPosition::Goal> goal);
+    
+    /**
+     * @brief 处理Action取消请求
+     * @param goal_handle Action目标句柄
+     */
+    rclcpp_action::CancelResponse handleMoveToPositionCancel(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle);
+    
+    /**
+     * @brief 执行移动到目标位置的Action
+     * @param goal_handle Action目标句柄
+     */
+    void handleMoveToPositionAccepted(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle);
+    
+    /**
+     * @brief 执行单轴移动
+     * @param axis 轴号
+     * @param target_position 目标位置
+     * @param speed 移动速度
+     * @param acceleration 加速度
+     * @param deceleration 减速度
+     * @return 是否成功
+     */
+    bool moveSingleAxis(int axis, float target_position, float speed, float acceleration, float deceleration);
+    
+    /**
+     * @brief 检查轴是否到达目标位置
+     * @param axis 轴号
+     * @param target_position 目标位置
+     * @param tolerance 容差
+     * @return 是否到达
+     */
+    bool isAxisAtPosition(int axis, float target_position, float tolerance = 0.001);
 
     // 位置相关方法
     /**
@@ -222,6 +267,11 @@ private:
     rclcpp::Publisher<motion_msgs::msg::MotionStatus>::SharedPtr motion_status_pub_;  ///< 运动状态发布者
     rclcpp::Service<motion_msgs::srv::ConvertDxfToXml>::SharedPtr convert_dxf_to_xml_service_;  ///< DXF到XML转换服务
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr convert_status_pub_;  ///< DXF->XML 转换状态发布者
+    rclcpp_action::Server<motion_msgs::action::MoveToPosition>::SharedPtr move_to_position_action_server_;  ///< 移动到目标位置Action服务器
+    
+    // Action执行状态
+    std::atomic<bool> action_running_;  ///< Action是否正在执行
+    std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> current_goal_handle_;  ///< 当前Action目标句柄
     
     static constexpr int NUM_AXES = 5;  ///< 轴数量
     static constexpr int AXES[NUM_AXES] = {0, 1, 2, 4, 5};  ///< 轴列表定义

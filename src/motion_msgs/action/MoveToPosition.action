@@ -1,0 +1,20 @@
+# Goal: 目标位置请求
+builtin_interfaces/Time stamp      # 动作开始时间
+int32[] target_axes                # 目标轴号列表
+float32[] target_positions         # 目标位置列表
+float32 speed                      # 移动速度
+float32 acceleration               # 加速度
+float32 deceleration               # 减速度
+bool wait_for_completion           # 是否等待移动完成
+---
+# Result: 最终结果
+builtin_interfaces/Time end_time   # 动作完成时间
+bool success                       # 是否成功
+string message                     # 状态消息
+float32[] final_positions          # 最终到达的位置
+---
+# Feedback: 过程反馈
+float32 progress                   # 移动进度 (0.0 ~ 1.0)
+float32[] current_positions        # 当前位置
+float32[] current_velocities       # 当前速度
+string current_status              # 当前状态描述

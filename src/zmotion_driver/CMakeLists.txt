@@ -18,6 +18,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(motion_msgs REQUIRED)
@@ -45,7 +46,7 @@ target_include_directories(zmotion_test PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(zmotion_test rclcpp std_msgs sensor_msgs motion_msgs)
+ament_target_dependencies(zmotion_test rclcpp rclcpp_action std_msgs sensor_msgs motion_msgs)
 
 target_link_libraries(zmotion_test
     # ${ZMOTION_LIBRARY}
