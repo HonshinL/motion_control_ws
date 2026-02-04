@@ -7,7 +7,7 @@ int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
     
     // 创建ZmcController实例（自动初始化ROS2节点）
-    auto zmc_controller = std::make_shared<ZmcController>("zmc_controller");
+    auto zmc_controller = std::make_shared<ZmcController>("zmc_node");
     
     // 显式启动控制器（建立连接并开始发布）
     zmc_controller->start();
