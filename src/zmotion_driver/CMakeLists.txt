@@ -34,33 +34,67 @@ find_library(ZMOTION_LIBRARY
   NO_DEFAULT_PATH
 )
 
-add_executable(zmotion_test
+# 设置运行时库路径
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/${PROJECT_NAME}")
+
+add_executable(zmotion_node
     src/main.cpp
     src/zmcaux.cpp
     src/zmc_controller.cpp
 )
 
 # 设置目标的包含目录
-target_include_directories(zmotion_test PUBLIC
+target_include_directories(zmotion_node PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(zmotion_test rclcpp rclcpp_action std_msgs sensor_msgs motion_msgs)
+ament_target_dependencies(zmotion_node rclcpp rclcpp_action std_msgs sensor_msgs motion_msgs)
 
-target_link_libraries(zmotion_test
+target_link_libraries(zmotion_node
     # ${ZMOTION_LIBRARY}
     pthread
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/libzmotion.so
 )
 
 # 设置rpath，确保运行时能够找到库文件
+set_target_properties(zmotion_node PROPERTIES
+  INSTALL_RPATH "$ORIGIN"
+  BUILD_WITH_INSTALL_RPATH TRUE
+)
+
+add_executable(zmotion_test
+    test/get_and_set_limits.cpp
+    src/zmcaux.cpp
+)
+
 set_target_properties(zmotion_test PROPERTIES
   INSTALL_RPATH "$ORIGIN"
   BUILD_WITH_INSTALL_RPATH TRUE
 )
 
+target_include_directories(zmotion_test PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(zmotion_test 
+    ${ZMOTION_LIBRARY}
+    pthread
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/libzmotion.so
+)
+
+# 设置运行时库搜索路径
+# if(UNIX AND NOT APPLE)
+#     set_target_properties(zmotion_test PROPERTIES
+#         INSTALL_RPATH "$ORIGIN/../lib/${PROJECT_NAME}"
+#         BUILD_WITH_INSTALL_RPATH TRUE
+#     )
+# endif()
+
 install(TARGETS 
+  zmotion_node
   zmotion_test
   DESTINATION lib/${PROJECT_NAME}
 )

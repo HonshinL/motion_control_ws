@@ -186,7 +186,7 @@ void ZmcController::initROS() {
     // 创建移动到目标位置Action服务器
     move_to_position_action_server_ = rclcpp_action::create_server<motion_msgs::action::MoveToPosition>(
         this,
-        "zmc/move_to_position",
+        "zmc_act/move_to_position",
         std::bind(&ZmcController::handleMoveToPositionGoal, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ZmcController::handleMoveToPositionCancel, this, std::placeholders::_1),
         std::bind(&ZmcController::handleMoveToPositionAccepted, this, std::placeholders::_1));
