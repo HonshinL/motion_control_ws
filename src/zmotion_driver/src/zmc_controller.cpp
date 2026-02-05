@@ -166,10 +166,10 @@ void ZmcController::initROS() {
     // 声明并获取参数
     std::string ip = this->declare_parameter<std::string>("controller_ip", "192.168.0.11");
     axis_ = this->declare_parameter<int>("monitoring_axis", 0);
-    connect_search_timeout_ms_ = this->declare_parameter<int>("controller_connect_search_timeout_ms", 1000);
+    connect_search_timeout_ms_ = this->declare_parameter<int>("controller_connect_search_timeout_ms", 10000);
     
     // 初始化轴列表（假设支持4个轴）
-    axes_ = {0, 1, 2, 3};
+    axes_ = {0, 1, 2, 4, 5}; // 示例轴号，根据实际情况调整
 
     // 创建发布者 (Publisher)
     // 发布运动状态
@@ -199,30 +199,42 @@ void ZmcController::initROS() {
 
 void ZmcController::start() {
     if (connecting_.load()) {
-        RCLCPP_WARN(this->get_logger(), "连接已在进行中");
+        RCLCPP_WARN(this->get_logger(), "连接已在进行中，跳过本次连接尝试");
+        return;
+    }
+
+    if (is_connected_) {
+        RCLCPP_INFO(this->get_logger(), "控制器已连接，无需重新连接");
         return;
     }
 
     connecting_.store(true);
-    int timeout_ms = connect_search_timeout_ms_;
+    
+    // 直接使用固定IP地址 192.168.0.11
+    std::string ip = "192.168.0.11";
+    
+    RCLCPP_INFO(this->get_logger(), "开始尝试连接控制器: %s", ip.c_str());
 
-    std::thread([this, timeout_ms]() {
-        std::string ip = this->get_parameter("controller_ip").as_string();
-        RCLCPP_INFO(this->get_logger(), "搜索控制器 %s (超时 %d ms)", ip.c_str(), timeout_ms);
-
-        int32 search_res = ZAux_SearchEth(ip.c_str(), static_cast<uint32>(timeout_ms));
-        if (search_res != ERR_OK) {
-            RCLCPP_ERROR(this->get_logger(), "控制器 %s 无响应（%d ms 超时），不尝试连接", ip.c_str(), timeout_ms);
-            connecting_.store(false);
-            return;
-        }
-
-        // 搜索到设备，尝试建立连接（此调用依然是阻塞性的库调用）
-        if (connect(ip)) {
-            RCLCPP_INFO(this->get_logger(), "已连接控制器: %s, 正在监控轴 %d", ip.c_str(), axis_);
+    std::thread([this, ip]() {
+        // 直接尝试连接，不进行搜索
+        bool connect_success = connect(ip);
+        
+        if (connect_success) {
+            RCLCPP_INFO(this->get_logger(), "✅ 成功连接到控制器: %s", ip.c_str());
+            RCLCPP_INFO(this->get_logger(), "📊 开始监控 %d 个轴: [%d, %d, %d, %d, %d]", 
+                       NUM_AXES, AXES[0], AXES[1], AXES[2], AXES[3], AXES[4]);
+            
+            // 启动数据发布
             startPublishing();
+            
+            RCLCPP_INFO(this->get_logger(), "🚀 控制器已启动并开始发布数据");
         } else {
-            RCLCPP_ERROR(this->get_logger(), "无法连接控制器!");
+            RCLCPP_ERROR(this->get_logger(), "❌ 连接控制器失败: %s", ip.c_str());
+            RCLCPP_ERROR(this->get_logger(), "💡 请检查以下事项:");
+            RCLCPP_ERROR(this->get_logger(), "  1. 控制器电源是否打开");
+            RCLCPP_ERROR(this->get_logger(), "  2. 网络连接是否正常");
+            RCLCPP_ERROR(this->get_logger(), "  3. IP地址 %s 是否正确", ip.c_str());
+            RCLCPP_ERROR(this->get_logger(), "  4. 防火墙设置是否允许连接");
         }
 
         connecting_.store(false);
@@ -256,13 +268,10 @@ void ZmcController::timer_callback() {
     // 创建MotionStatus消息
     auto motion_status_msg = motion_msgs::msg::MotionStatus();
     
-    // 填充Header
-    motion_status_msg.header.stamp = this->now();
-    motion_status_msg.header.frame_id = "zmc_status";
-    
-    // 填充JointState
+    // 直接设置JointState的Header，避免重复
     auto& joint_state = motion_status_msg.joint_state;
-    joint_state.header = motion_status_msg.header;
+    joint_state.header.stamp = this->now();
+    joint_state.header.frame_id = "zmc_status";
     
     bool all_axes_success = true;
     

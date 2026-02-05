@@ -65,7 +65,7 @@ set_target_properties(zmotion_node PROPERTIES
 )
 
 add_executable(zmotion_test
-    test/get_and_set_limits.cpp
+    test/test.cpp
     src/zmcaux.cpp
 )
 

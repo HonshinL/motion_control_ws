@@ -1,0 +1,17 @@
+graph TD
+    A[程序启动] --> B[创建 Node 和 MultiThreadedExecutor]
+    B --> C[创建并启动 main_thread]
+    B --> D[主线程进入 executor.spin]
+    
+    subgraph "后台并发运行"
+        C --> C1[10Hz 自定义主循环]
+        D --> D1[线程池线程1: 处理回调]
+        D --> D2[线程池线程2: 处理回调]
+        D --> D3[...]
+    end
+    
+    C1 --> E[程序结束信号]
+    D1 --> E
+    E --> F[主线程退出 spin]
+    F --> G[main_thread.join]
+    G --> H[退出]

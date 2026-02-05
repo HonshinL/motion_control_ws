@@ -19,8 +19,7 @@ using namespace std::chrono_literals;
 
 class ZmcController : public rclcpp::Node {
 public:
-    ZmcController();
-    ZmcController(const std::string& node_name = "zmc_controller");
+    ZmcController(const std::string& node_name = "zmc_node");
     ~ZmcController();
 
     /**

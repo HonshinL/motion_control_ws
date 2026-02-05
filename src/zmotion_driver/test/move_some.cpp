@@ -13,7 +13,7 @@ int main() {
         return -1;
     }
 
-    int axis = 0; 
+    int axis = 1; 
     float target_distance = 10.0; // 设定测试距离为 10 mm/Units
 
     // 1. 运动参数设置

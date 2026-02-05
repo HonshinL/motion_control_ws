@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstdio>
+#include <iomanip>  // 用于控制输出格式
 #include "zmotion_driver/zmcaux.h" // 使用项目中的Zmotion头文件
 
 int main(int argc, char* argv[])
@@ -38,7 +39,7 @@ int main(int argc, char* argv[])
         ret = ZAux_Direct_GetFsLimit(handle, axis, &soft_limit_up);
         if (ret == ERR_OK)
         {
-            std::cout << "软件正向限位（上限）：" << soft_limit_up << std::endl;
+            std::cout << "软件正向限位（上限）：" << std::fixed << std::setprecision(3) << soft_limit_up << std::endl;
         }
         else
         {
@@ -48,7 +49,7 @@ int main(int argc, char* argv[])
         ret = ZAux_Direct_GetRsLimit(handle, axis, &soft_limit_down);
         if (ret == ERR_OK)
         {
-            std::cout << "软件反向限位（下限）：" << soft_limit_down << std::endl;
+            std::cout << "软件反向限位（下限）：" << std::fixed << std::setprecision(3) << soft_limit_down << std::endl;
         }
         else
         {
@@ -79,6 +80,7 @@ int main(int argc, char* argv[])
 
     // 4. 断开连接
     ZAux_Close(handle);
+    handle = NULL;
     std::cout << "已断开控制器连接！" << std::endl;
     return 0;
 }

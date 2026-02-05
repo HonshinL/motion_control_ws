@@ -9,8 +9,8 @@ int main() {
     char ip[] = "192.168.0.11"; 
     if (ZAux_OpenEth(ip, &handle) != 0) return -1;
 
-    int axis = 2;
-    float distance = 10.0; // 目标移动 10mm
+    int axis = 1;
+    float distance = -50.0; // 目标移动 10mm
 
     // 1. 初始化安全参数
     ZAux_Direct_SetUnits(handle, axis, 1000.0); // 1mm = 1000 脉冲
