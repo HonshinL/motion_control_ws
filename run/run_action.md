@@ -24,7 +24,7 @@ filePath: /home/hongxin/Projects/10_Github/zmotion_ws/src/motion_msgs/action/Mov
 
 ```bash
 # 发送action目标
-ros2 action send_goal /zmc/move_to_position motion_msgs/action/MoveToPosition "
+ros2 action send_goal /zmc_act/move_to_position motion_msgs/action/MoveToPosition "
 {
   target_axes: [0, 1, 2, 4, 5],
   target_positions: [100.0, 200.0, 300.0, 400.0, 500.0],
@@ -60,13 +60,13 @@ wait_for_completion: true
 EOF
 
 # 使用YAML文件发送
-ros2 action send_goal /zmc/move_to_position motion_msgs/action/MoveToPosition --goal goal.yaml --feedback
+ros2 action send_goal /zmc_act/move_to_position motion_msgs/action/MoveToPosition --goal goal.yaml --feedback
 ```
 
 ## 3. 交互式发送（逐个输入参数）
 
 ```bash
-ros2 action send_goal /zmc/move_to_position motion_msgs/action/MoveToPosition --interactive
+ros2 action send_goal /zmc_act/move_to_position motion_msgs/action/MoveToPosition --interactive
 ```
 
 然后按照提示逐个输入参数。
@@ -80,7 +80,7 @@ ros2 action send_goal /zmc/move_to_position motion_msgs/action/MoveToPosition --
 ros2 action list
 
 # 查看特定action的信息
-ros2 action info /zmc/move_to_position
+ros2 action info /zmc_act/move_to_position
 
 # 查看action的类型
 ros2 action list -t
@@ -95,13 +95,13 @@ ros2 interface show motion_msgs/action/MoveToPosition
 
 ```bash
 # 监控action反馈
-ros2 topic echo /zmc/move_to_position/_action/feedback
+ros2 topic echo /zmc_act/move_to_position/_action/feedback
 
 # 监控action结果
-ros2 topic echo /zmc/move_to_position/_action/result
+ros2 topic echo /zmc_act/move_to_position/_action/result
 
 # 监控action状态
-ros2 topic echo /zmc/move_to_position/_action/status
+ros2 topic echo /zmc_act/move_to_position/_action/status
 ```
 
 ## 6. 取消正在执行的Action
@@ -113,14 +113,14 @@ ros2 topic echo /zmc/move_to_position/_action/status
 ros2 action list --active
 
 # 取消action（需要知道goal_id）
-ros2 action cancel_goal /zmc/move_to_position <goal_id>
+ros2 action cancel_goal /zmc_act/move_to_position <goal_id>
 ```
 
 ## 实际使用示例
 
 **示例1：移动所有5个轴到指定位置**
 ```bash
-ros2 action send_goal /zmc/move_to_position motion_msgs/action/MoveToPosition "
+ros2 action send_goal /zmc_act/move_to_position motion_msgs/action/MoveToPosition "
 {
   target_axes: [0, 1, 2, 4, 5],
   target_positions: [50.0, 100.0, 150.0, 200.0, 250.0],
@@ -133,7 +133,7 @@ ros2 action send_goal /zmc/move_to_position motion_msgs/action/MoveToPosition "
 
 **示例2：只移动单个轴**
 ```bash
-ros2 action send_goal /zmc/move_to_position motion_msgs/action/MoveToPosition "
+ros2 action send_goal /zmc_act/move_to_position motion_msgs/action/MoveToPosition "
 {
   target_axes: [0],
   target_positions: [100.0],

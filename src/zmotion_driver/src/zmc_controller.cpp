@@ -255,7 +255,7 @@ void ZmcController::startPublishing() {
     // 创建定时器 (WallTimer)
     // 每 20 毫秒执行一次 timer_callback (50Hz)
     if (!timer_) {
-        timer_ = this->create_wall_timer(20ms, std::bind(&ZmcController::timer_callback, this));
+        timer_ = this->create_wall_timer(500ms, std::bind(&ZmcController::timer_callback, this));
         RCLCPP_INFO(this->get_logger(), "开始发布控制器数据");
     }
 }
@@ -555,6 +555,16 @@ rclcpp_action::CancelResponse ZmcController::handleMoveToPositionCancel(
 void ZmcController::handleMoveToPositionAccepted(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle) {
     
+    RCLCPP_INFO(this->get_logger(), "Action目标被接受，启动异步执行");
+    
+    // 启动独立线程执行，避免阻塞ROS2主线程
+    std::thread{std::bind(&ZmcController::executeMoveToPosition, this, goal_handle)}.detach();
+}
+
+void ZmcController::executeMoveToPosition(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle) {
+    
+    // 设置执行状态
     action_running_ = true;
     current_goal_handle_ = goal_handle;
     
@@ -562,9 +572,14 @@ void ZmcController::handleMoveToPositionAccepted(
     auto result = std::make_shared<motion_msgs::action::MoveToPosition::Result>();
     auto feedback = std::make_shared<motion_msgs::action::MoveToPosition::Feedback>();
     
-    RCLCPP_INFO(this->get_logger(), "开始执行移动到目标位置Action");
+    RCLCPP_INFO(this->get_logger(), "开始异步执行移动到目标位置Action");
     
     try {
+        // 检查控制器连接状态
+        if (!is_connected_) {
+            throw std::runtime_error("控制器未连接");
+        }
+        
         // 设置运动参数
         for (size_t i = 0; i < goal->target_axes.size(); ++i) {
             int axis = goal->target_axes[i];
@@ -590,7 +605,7 @@ void ZmcController::handleMoveToPositionAccepted(
             int axis = goal->target_axes[i];
             float target_position = goal->target_positions[i];
             
-            if (!checkError(ZAux_Direct_Single_MoveAbs(handle_, axis, target_position))) {
+            if (!checkError(ZAux_Direct_Single_Move(handle_, axis, target_position))) {
                 throw std::runtime_error("设置轴 " + std::to_string(axis) + " 目标位置失败");
             }
             
@@ -599,13 +614,14 @@ void ZmcController::handleMoveToPositionAccepted(
         
         // 监控运动过程
         bool all_axes_completed = false;
-        auto start_time = this->now();
+        auto start_time = std::chrono::steady_clock::now();
         
         while (action_running_ && !all_axes_completed) {
             // 检查Action是否被取消
             if (goal_handle->is_canceling()) {
                 result->success = false;
                 result->message = "Action被用户取消";
+                result->end_time = this->now();
                 goal_handle->canceled(result);
                 action_running_ = false;
                 RCLCPP_INFO(this->get_logger(), "Action执行被取消");
@@ -651,6 +667,13 @@ void ZmcController::handleMoveToPositionAccepted(
             // 发布反馈
             goal_handle->publish_feedback(feedback);
             
+            // 计算耗时
+            auto current_time = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time);
+            
+            RCLCPP_DEBUG(this->get_logger(), "运动进度: %.1f%%, 耗时: %ld秒", 
+                        feedback->progress * 100, elapsed.count());
+            
             // 短暂休眠，避免过度占用CPU
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
@@ -675,7 +698,9 @@ void ZmcController::handleMoveToPositionAccepted(
         RCLCPP_ERROR(this->get_logger(), "Action执行失败: %s", e.what());
     }
     
+    // 清理执行状态
     action_running_ = false;
+    current_goal_handle_.reset();
 }
 
 // 执行单轴移动
@@ -686,7 +711,7 @@ bool ZmcController::moveSingleAxis(int axis, float target_position, float speed,
     if (!checkError(ZAux_Direct_SetSpeed(handle_, axis, speed)) ||
         !checkError(ZAux_Direct_SetAccel(handle_, axis, acceleration)) ||
         !checkError(ZAux_Direct_SetDecel(handle_, axis, deceleration)) ||
-        !checkError(ZAux_Direct_Single_MoveAbs(handle_, axis, target_position))) {
+        !checkError(ZAux_Direct_Single_Move(handle_, axis, target_position))) {
         return false;
     }
     

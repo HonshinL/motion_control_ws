@@ -23,11 +23,11 @@ public:
             std::bind(&ObjectPositionToActionConverter::object_position_callback, this, std::placeholders::_1));
         
         // 创建 MoveToPosition Action 客户端
-        action_client_ = rclcpp_action::create_client<MoveToPosition>(this, "move_to_position");
+        action_client_ = rclcpp_action::create_client<MoveToPosition>(this, "zmc_act/move_to_position");
         
         RCLCPP_INFO(this->get_logger(), "ObjectPosition 到 Action 转换节点已启动");
         RCLCPP_INFO(this->get_logger(), "订阅话题: /app_pos");
-        RCLCPP_INFO(this->get_logger(), "发布 Action: move_to_position");
+        RCLCPP_INFO(this->get_logger(), "发布 Action: zmc_act/move_to_position");
     }
 
 private:

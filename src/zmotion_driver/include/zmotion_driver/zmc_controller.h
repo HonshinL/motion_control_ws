@@ -98,10 +98,17 @@ public:
         const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle);
     
     /**
-     * @brief 执行移动到目标位置的Action
+     * @brief 处理Action接受回调
      * @param goal_handle Action目标句柄
      */
     void handleMoveToPositionAccepted(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle);
+    
+    /**
+     * @brief 执行移动到目标位置的Action（异步执行）
+     * @param goal_handle Action目标句柄
+     */
+    void executeMoveToPosition(
         const std::shared_ptr<rclcpp_action::ServerGoalHandle<motion_msgs::action::MoveToPosition>> goal_handle);
     
     /**
